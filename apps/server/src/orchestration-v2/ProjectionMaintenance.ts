@@ -39,7 +39,7 @@ export class ProjectionMaintenanceV2 extends Context.Service<
 >()("t3/orchestration-v2/ProjectionMaintenance/ProjectionMaintenanceV2") {}
 
 // Reconnect replay and command-id retries read this tail; older cursors resync from a snapshot.
-const RETAINED_EVENT_HISTORY = Duration.days(1);
+const RETAINED_EVENT_HISTORY = Duration.hours(1);
 // Small pages bound work on the reader worker and synchronous fallback.
 const PAGE_SIZE = 50;
 const REFERENCE_SCAN_WINDOW = 1000;

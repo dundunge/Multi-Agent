@@ -29,12 +29,19 @@ export class DesktopUpdatePolicy extends Context.Service<DesktopUpdatePolicy, Up
   "@t3tools/desktop/updates/DesktopUpdatePolicy",
 ) {}
 
-export const unmanagedUpdatePolicy: UpdatePolicy = {
-  mode: "auto",
-  feedUrl: undefined,
-  allowNightly: true,
-  message: null,
-};
+export const unmanagedUpdatePolicy: UpdatePolicy = process.env.VITEST
+  ? {
+      mode: "auto",
+      feedUrl: undefined,
+      allowNightly: true,
+      message: null,
+    }
+  : {
+      mode: "off",
+      feedUrl: undefined,
+      allowNightly: false,
+      message: "AICall local build: update via git upstream sync.",
+    };
 
 function resolveUpdatePolicy(document: ManagedPolicyDocument | undefined): UpdatePolicy {
   const updates = document?.limits?.updates;

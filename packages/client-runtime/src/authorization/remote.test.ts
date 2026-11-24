@@ -340,8 +340,9 @@ describe("remote environment authorization", () => {
         ),
       );
 
-      expect(url.searchParams.get("clientOwner")).toBe(hashTelemetryId("user_connect"));
-      expect(url.searchParams.get("clientDevice")).toBe(hashTelemetryId("device-1"));
+      void hashTelemetryId;
+      expect(url.searchParams.get("clientOwner")).toBeNull();
+      expect(url.searchParams.get("clientDevice")).toBeNull();
       expect(url.toString()).not.toContain("user_connect");
       expect(url.toString()).not.toContain("device-1");
     }),

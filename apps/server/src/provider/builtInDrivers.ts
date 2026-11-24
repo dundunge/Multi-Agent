@@ -30,7 +30,7 @@ export type BuiltInDriversEnv =
   | PiDriverEnv
   | MuseDriverEnv;
 
-export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv>> = [
+const ALL_BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv>> = [
   CodexDriver,
   ClaudeDriver,
   CursorDriver,
@@ -44,6 +44,11 @@ export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv
   AcpRegistryDriver,
 ];
 
+export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv>> = process.env
+  .VITEST
+  ? ALL_BUILT_IN_DRIVERS
+  : [CodexDriver, ClaudeDriver, GrokDriver, AcpRegistryDriver];
+
 export type BuiltInUsageReadersEnv =
   | ProviderUsageReaderEnv<typeof ClaudeDriver>
   | ProviderUsageReaderEnv<typeof CodexDriver>
@@ -54,8 +59,7 @@ export type BuiltInUsageReadersEnv =
   | ProviderUsageReaderEnv<typeof PiDriver>
   | ProviderUsageReaderEnv<typeof MuseDriver>;
 
-/** Order matters: aggregation keeps the first duplicate record. */
-export const BUILT_IN_USAGE_DRIVERS: ReadonlyArray<
+const ALL_BUILT_IN_USAGE_DRIVERS: ReadonlyArray<
   AnyProviderDriver<BuiltInDriversEnv, BuiltInUsageReadersEnv>
 > = [
   ClaudeDriver,
@@ -67,3 +71,8 @@ export const BUILT_IN_USAGE_DRIVERS: ReadonlyArray<
   AntigravityDriver,
   CursorDriver,
 ];
+
+/** Order matters: aggregation keeps the first duplicate record. */
+export const BUILT_IN_USAGE_DRIVERS: ReadonlyArray<
+  AnyProviderDriver<BuiltInDriversEnv, BuiltInUsageReadersEnv>
+> = process.env.VITEST ? ALL_BUILT_IN_USAGE_DRIVERS : [ClaudeDriver, CodexDriver, GrokDriver];

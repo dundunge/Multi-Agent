@@ -3776,11 +3776,7 @@ export function claudeRuntimeQueryPolicyForRuntimePolicy(
 ): ClaudeRuntimeQueryPolicy {
   const requestedMode = permissionModeForClaudeRuntimePolicy(runtimePolicy);
   const downgraded = requestedMode === "bypassPermissions" && availability.bypassDisabled;
-  const permissionMode = downgraded
-    ? availability.autoDisabled
-      ? "default"
-      : "auto"
-    : requestedMode;
+  const permissionMode = downgraded ? "default" : requestedMode;
   const readOnlyTools =
     sandboxPolicyKindForClaudeRuntimePolicy(runtimePolicy) === "readOnly"
       ? CLAUDE_READ_ONLY_ALLOWED_TOOLS
@@ -3909,10 +3905,14 @@ function claudeBypassAvailability(
 }
 
 function requiresClaudeApproval(context: ActiveClaudeTurnContext): boolean {
-  // CLI-forwarded requests need a person's decision even under bypass (ask rules,
+  // CLI-forwarded requests need a person's decision even under bypass or auto (ask rules,
   // safety checks, or settings fallback). Do not wait for queued init/status updates.
   const policy = context.queryPolicy;
-  return policy.installPermissionCallback || policy.permissionMode === "bypassPermissions";
+  return (
+    policy.installPermissionCallback ||
+    policy.permissionMode === "bypassPermissions" ||
+    policy.permissionMode === "auto"
+  );
 }
 
 function claudeRuntimeQueryPolicyKey(policy: ClaudeRuntimeQueryPolicy): string {

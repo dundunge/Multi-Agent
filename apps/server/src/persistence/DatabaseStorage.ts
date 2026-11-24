@@ -21,7 +21,7 @@ import { forkParked } from "../serverActivation.ts";
 
 // Bound each reclaim pass to one minute of churn.
 const RECLAIM_PAGES_PER_PASS = 1024;
-const COMPACTION_INTERVAL = Duration.hours(6);
+const COMPACTION_INTERVAL = Duration.hours(1);
 
 export class DatabaseStorage extends Context.Service<
   DatabaseStorage,

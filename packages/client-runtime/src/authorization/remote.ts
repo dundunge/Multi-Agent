@@ -105,12 +105,7 @@ export const appendClientConnectionParams = (
   if (connectionMethod) {
     url.searchParams.set("connectionMethod", connectionMethod);
   }
-  if (owners?.connect) {
-    url.searchParams.set("clientOwner", owners.connect);
-  }
-  if (owners?.device) {
-    url.searchParams.set("clientDevice", owners.device);
-  }
+  void owners;
 };
 
 export const exchangeRemoteDpopAccessToken = Effect.fn(

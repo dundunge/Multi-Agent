@@ -87,6 +87,24 @@ export function resolveInteractionMode(
     : Effect.succeed(resolved);
 }
 
+/** Caps review/research roles and read-only audit seats (grok, astra) to approval-required. */
+export function effectiveRequestedRuntimeMode(
+  input: Pick<OrchestratorMcpDelegateTaskInput, "role" | "runtimeMode">,
+  target?: { readonly modelSelection: ModelSelection },
+): OrchestratorMcpRuntimeMode | undefined {
+  const model = target?.modelSelection.model.toLowerCase() ?? "";
+  const instanceId = String(target?.modelSelection.instanceId ?? "").toLowerCase();
+  if (
+    input.role === "review" ||
+    input.role === "research" ||
+    instanceId === "grok" ||
+    model.includes("astra")
+  ) {
+    return "approval-required";
+  }
+  return input.runtimeMode;
+}
+
 /** The task as its child receives it, with the role the caller asked for. */
 export function taskPrompt(input: OrchestratorMcpDelegateTaskInput): string {
   return input.role === undefined || input.role === "general"

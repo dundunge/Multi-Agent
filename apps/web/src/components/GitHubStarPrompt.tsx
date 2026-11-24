@@ -146,7 +146,13 @@ async function starRepository(environmentId: EnvironmentId) {
  * Counts a sent prompt. After more than five, asks once per session for a star until dismissed,
  * unless the environment's GitHub account already starred the repo. Waits until the user is idle.
  */
+const AICALL_DISABLE_STAR_PROMPT: boolean = true;
+
 export async function recordPromptSent(environmentId: EnvironmentId): Promise<void> {
+  if (AICALL_DISABLE_STAR_PROMPT) {
+    void environmentId;
+    return;
+  }
   if (shownThisSession) return;
   try {
     if (getLocalStorageItem(DISMISSED_KEY, Schema.Boolean)) return;

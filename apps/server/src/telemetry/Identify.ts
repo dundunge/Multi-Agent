@@ -251,46 +251,37 @@ const upsertAnonymousId = Effect.gen(function* () {
 });
 
 const readProviderLogins = Effect.fn("TelemetryIdentity.readProviderLogins")(function* (
-  homeDirectory: string,
+  _homeDirectory: string,
 ) {
-  const path = yield* Path.Path;
-  const codexTokens = yield* readJsonIdentityFile(
-    "codex",
-    path.join(homeDirectory, ".codex", "auth.json"),
+  yield* Effect.void;
+  void [
+    Path,
     decodeCodexAuthJson,
-  ).pipe(
-    skipOnError,
-    Effect.map(Option.flatMap((authJson) => Option.fromUndefinedOr(authJson.tokens))),
-  );
-  const claudeJson = yield* readJsonIdentityFile(
-    "claude",
-    path.join(homeDirectory, ".claude.json"),
     decodeClaudeJson,
-  ).pipe(skipOnError);
-  return { codexTokens, claudeJson };
+    readJsonIdentityFile,
+    skipOnError,
+    upsertAnonymousId,
+    hashTelemetryId,
+    ServerSecretStore,
+    CLOUD_LINKED_USER_ID,
+  ];
+  return {
+    codexTokens: Option.none<{ readonly account_id: string; readonly id_token?: string }>(),
+    claudeJson: Option.none<typeof ClaudeJsonSchema.Type>(),
+  };
 });
 
 /**
- * `distinctId` preserves legacy priority: hashed Codex account_id, Claude userID, then anonymous id.
- * It can change on login or be shared by a Codex Team; hashed `installId` stays stable per install.
- * A null `distinctId` disables telemetry. Missing files and API-key-only Codex auth fall through;
- * only unreadable or malformed files warn.
+ * Telemetry identity disabled in AICall local fork: never reads ~/.codex/auth.json,
+ * ~/.claude.json, or persists ~/.t3/userdata/anonymous-id.
  */
 export const getTelemetryIdentityForHome = Effect.fn("getTelemetryIdentityForHome")(function* (
   homeDirectory: string,
 ) {
-  const { codexTokens, claudeJson } = yield* readProviderLogins(homeDirectory);
-  const installId = yield* upsertAnonymousId.pipe(
-    Effect.map(hashTelemetryId),
-    Effect.catch((error) => logTelemetryIdentityError(error).pipe(Effect.as(null))),
-  );
-  const providerId = Option.orElse(
-    Option.map(codexTokens, (tokens) => tokens.account_id),
-    () => Option.flatMap(claudeJson, (json) => Option.fromUndefinedOr(json.userID)),
-  );
+  yield* readProviderLogins(homeDirectory);
   return {
-    distinctId: Option.isSome(providerId) ? hashTelemetryId(providerId.value) : installId,
-    installId,
+    distinctId: null as string | null,
+    installId: null as string | null,
   };
 });
 
@@ -300,42 +291,13 @@ export const getTelemetryIdentity = Effect.flatMap(
 );
 
 /**
- * Owners the server can read without a client: the linked T3 Connect account
- * and the provider logins under `homeDirectory`. Clients add `connect` and
- * `device` owners when they connect.
+ * Disabled in AICall local fork: never reads linked T3 Connect or provider logins.
  */
 export const getServerOwnersForHome = Effect.fn("getServerOwnersForHome")(function* (
   homeDirectory: string,
 ) {
-  const secrets = yield* ServerSecretStore.ServerSecretStore;
-  const connectUser = yield* secrets.get(CLOUD_LINKED_USER_ID).pipe(
-    Effect.map(Option.map((bytes) => new TextDecoder().decode(bytes))),
-    Effect.catch((cause) =>
-      Effect.logWarning("Failed to read the linked T3 Connect account for telemetry", {
-        errorTag: cause._tag,
-      }).pipe(Effect.as(Option.none<string>())),
-    ),
-  );
-  const { codexTokens, claudeJson } = yield* readProviderLogins(homeDirectory);
-
-  const raw: ReadonlyArray<readonly [TelemetryOwnerSource, Option.Option<string>]> = [
-    ["connect", connectUser],
-    [
-      "openai",
-      Option.flatMap(codexTokens, (tokens) =>
-        Option.flatMap(Option.fromUndefinedOr(tokens.id_token), openAiUserId),
-      ),
-    ],
-    [
-      "claude",
-      Option.flatMap(claudeJson, (json) => Option.fromUndefinedOr(json.oauthAccount?.accountUuid)),
-    ],
-  ];
-  return raw.flatMap(([source, value]): ReadonlyArray<TelemetryOwner> =>
-    Option.isSome(value) && value.value.trim() !== ""
-      ? [{ source, ownerId: hashTelemetryId(value.value) }]
-      : [],
-  );
+  yield* readProviderLogins(homeDirectory);
+  return [] as ReadonlyArray<TelemetryOwner>;
 });
 
 export const getServerOwners = Effect.flatMap(HostProcess.HomeDirectory, getServerOwnersForHome);
