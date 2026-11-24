@@ -105,6 +105,7 @@ interface ActiveConnector {
 // An instantly failing relay client otherwise respawns ~100 times/sec and exhausts V8 via tracing.
 const isRotatingFileSinkError = Schema.is(RotatingFileSinkError);
 
+const ENABLE_MANAGED_ENDPOINT_RUNTIME = Boolean(process.env.VITEST);
 const RELAY_RESTART_STABLE_UPTIME_MS = 30_000;
 const RELAY_RESTART_BACKOFF_BASE_MS = 1_000;
 const RELAY_RESTART_BACKOFF_MAX_MS = 60_000;
@@ -889,7 +890,7 @@ export const make = Effect.gen(function* () {
     (requested: RelayManagedEndpointRuntimeConfig | null) =>
       reconcileSemaphore.withPermits(1)(
         Effect.gen(function* () {
-          const config = connectAllowed ? requested : null;
+          const config = ENABLE_MANAGED_ENDPOINT_RUNTIME && connectAllowed ? requested : null;
           // Keep backoff when recovery returns the same tunnel/token, or every recovery respawns a crash loop.
           const desired = yield* Ref.get(desiredConfigRef);
           const unchanged =

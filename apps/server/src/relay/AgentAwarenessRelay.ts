@@ -55,6 +55,8 @@ import { isSnoozed } from "../orchestration-v2/ThreadSettlementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import { forkParked } from "../serverActivation.ts";
 
+const ENABLE_AGENT_AWARENESS_RELAY = Boolean(process.env.VITEST);
+
 export class AgentAwarenessRelay extends Context.Service<
   AgentAwarenessRelay,
   {
@@ -951,6 +953,9 @@ export const make = Effect.gen(function* () {
 
   const start: AgentAwarenessRelay["Service"]["start"] = Effect.fn("AgentAwarenessRelay.start")(
     function* () {
+      if (!ENABLE_AGENT_AWARENESS_RELAY) {
+        return;
+      }
       const [relayConfig, publishEnabled] = yield* Effect.all([
         readRelayConfig.pipe(Effect.orElseSucceed(() => null)),
         readPublishAgentActivityEnabled.pipe(Effect.orElseSucceed(() => false)),

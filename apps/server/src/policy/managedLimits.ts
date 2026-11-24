@@ -72,9 +72,13 @@ export function allowsAuthPolicy(policy: PolicyDocument, authPolicy: ServerAuthP
 export const allowsRemoteClients = (policy: PolicyDocument) =>
   allowsAuthPolicy(policy, "remote-reachable");
 
+const ENABLE_T3_CLOUD_CONNECT = Boolean(process.env.VITEST);
+
 /** T3 Connect is a way for remote clients in, so a policy without `remote` turns it off too. */
 export const allowsConnect = (policy: PolicyDocument) =>
-  policy.document?.limits?.connect !== false && allowsRemoteClients(policy);
+  ENABLE_T3_CLOUD_CONNECT &&
+  policy.document?.limits?.connect !== false &&
+  allowsRemoteClients(policy);
 
 const refuse = (policy: PolicyDocument, action: string, detail?: string) =>
   new ManagedPolicyRefusedError({
