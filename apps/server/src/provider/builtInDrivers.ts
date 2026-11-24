@@ -47,7 +47,7 @@ const ALL_BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv>> 
 export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv>> = process.env
   .VITEST
   ? ALL_BUILT_IN_DRIVERS
-  : [CodexDriver, ClaudeDriver, GrokDriver, AcpRegistryDriver];
+  : [CodexDriver, ClaudeDriver, GrokDriver, AntigravityDriver, AcpRegistryDriver];
 
 export type BuiltInUsageReadersEnv =
   | ProviderUsageReaderEnv<typeof ClaudeDriver>
@@ -75,4 +75,6 @@ const ALL_BUILT_IN_USAGE_DRIVERS: ReadonlyArray<
 /** Order matters: aggregation keeps the first duplicate record. */
 export const BUILT_IN_USAGE_DRIVERS: ReadonlyArray<
   AnyProviderDriver<BuiltInDriversEnv, BuiltInUsageReadersEnv>
-> = process.env.VITEST ? ALL_BUILT_IN_USAGE_DRIVERS : [ClaudeDriver, CodexDriver, GrokDriver];
+> = process.env.VITEST
+  ? ALL_BUILT_IN_USAGE_DRIVERS
+  : [ClaudeDriver, CodexDriver, GrokDriver, AntigravityDriver];

@@ -317,6 +317,8 @@ function modelWindows(models: typeof Models.Type) {
   return [...windows.values()];
 }
 
+const ENABLE_ANTIGRAVITY_QUOTA_PROBE = Boolean(process.env.VITEST);
+
 export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(function* (input: {
   readonly profileDirectory: string;
   readonly authMethod: AntigravitySettings["authMethod"];
@@ -350,6 +352,9 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
   const read = Effect.gen(function* () {
     const startedGeneration = generation;
     const checkedAt = DateTime.formatIso(yield* DateTime.now);
+    if (!ENABLE_ANTIGRAVITY_QUOTA_PROBE) {
+      return makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" });
+    }
     if (input.authMethod !== "oauth-personal" && input.authMethod !== "oauth-business") {
       return makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" });
     }

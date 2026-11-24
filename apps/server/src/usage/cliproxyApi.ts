@@ -299,6 +299,44 @@ const GROK_CLI_VERSION = "1.0.77";
 const ANTIGRAVITY_SUMMARY_URL =
   "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary";
 
+const ANTIGRAVITY_HUB: HubProvider = {
+  driver: ProviderDriverKind.make("antigravity"),
+  header: (_account, platform, architecture) => ({
+    Authorization: "Bearer $TOKEN$",
+    "Content-Type": "application/json",
+    "User-Agent": antigravityUserAgent(platform, architecture),
+  }),
+  read: Effect.fnUntraced(function* ({ account, call, checkedAt }) {
+    const project = account.project_id?.trim();
+    if (!project) {
+      return yield* new UsageLimitSourceError({
+        detail: "No Antigravity project reported.",
+      });
+    }
+    const requestedAt = DateTime.toEpochMillis(yield* DateTime.now);
+    const summary = yield* call(ANTIGRAVITY_SUMMARY_URL, { project });
+    const windows = yield* antigravitySummaryWindows(yield* decodeJson(summary), requestedAt);
+    if (windows.length === 0) {
+      return yield* new UsageLimitSourceError({
+        detail: "No Antigravity quota reported.",
+      });
+    }
+    // Local Antigravity reports no e-mail, so the Google account fingerprint is what pools the two.
+    const fingerprint = yield* call("https://www.googleapis.com/oauth2/v2/userinfo").pipe(
+      Effect.flatMap(decodeJson),
+      Effect.flatMap(antigravityAccountFingerprint),
+      Effect.option,
+    );
+    const usageLimits = makeUsageLimits({ checkedAt, windows });
+    return Option.match(fingerprint, {
+      onNone: () => ({ ...listedIdentity(account), usageLimits }),
+      onSome: (credentialFingerprint) => ({
+        usageLimits: { ...usageLimits, credentialFingerprint },
+      }),
+    });
+  }),
+};
+
 // Keyed by the auth-files `provider`; accounts of any other provider are skipped.
 const HUB_PROVIDERS = new Map<string, HubProvider>([
   ["codex", CODEX_HUB],
@@ -364,42 +402,9 @@ const HUB_PROVIDERS = new Map<string, HubProvider>([
       }),
     },
   ],
-  [
-    "antigravity",
-    {
-      driver: ProviderDriverKind.make("antigravity"),
-      header: (_account, platform, architecture) => ({
-        Authorization: "Bearer $TOKEN$",
-        "Content-Type": "application/json",
-        "User-Agent": antigravityUserAgent(platform, architecture),
-      }),
-      read: Effect.fnUntraced(function* ({ account, call, checkedAt }) {
-        const project = account.project_id?.trim();
-        if (!project) {
-          return yield* new UsageLimitSourceError({ detail: "No Antigravity project reported." });
-        }
-        const requestedAt = DateTime.toEpochMillis(yield* DateTime.now);
-        const summary = yield* call(ANTIGRAVITY_SUMMARY_URL, { project });
-        const windows = yield* antigravitySummaryWindows(yield* decodeJson(summary), requestedAt);
-        if (windows.length === 0) {
-          return yield* new UsageLimitSourceError({ detail: "No Antigravity quota reported." });
-        }
-        // Local Antigravity reports no e-mail, so the Google account fingerprint is what pools the two.
-        const fingerprint = yield* call("https://www.googleapis.com/oauth2/v2/userinfo").pipe(
-          Effect.flatMap(decodeJson),
-          Effect.flatMap(antigravityAccountFingerprint),
-          Effect.option,
-        );
-        const usageLimits = makeUsageLimits({ checkedAt, windows });
-        return Option.match(fingerprint, {
-          onNone: () => ({ ...listedIdentity(account), usageLimits }),
-          onSome: (credentialFingerprint) => ({
-            usageLimits: { ...usageLimits, credentialFingerprint },
-          }),
-        });
-      }),
-    },
-  ],
+  ...(process.env.VITEST
+    ? ([["antigravity", ANTIGRAVITY_HUB]] as Array<[string, HubProvider]>)
+    : []),
 ]);
 
 export const makeCliproxyApi = Effect.gen(function* () {
