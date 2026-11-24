@@ -131,7 +131,6 @@ import {
 } from "./McpInvocationContext.ts";
 import * as Metrics from "../observability/Metrics.ts";
 import {
-  effectiveRequestedRuntimeMode,
   interactionModeRank,
   resolveInteractionMode,
   resolveRuntimeMode,
@@ -2968,7 +2967,7 @@ const make = Effect.gen(function* () {
       });
       const runtimeMode = yield* resolveRuntimeMode(
         parent.thread.runtimeMode,
-        effectiveRequestedRuntimeMode(input, target),
+        input.runtimeMode,
         target,
       );
       const interactionMode = yield* resolveInteractionMode(
