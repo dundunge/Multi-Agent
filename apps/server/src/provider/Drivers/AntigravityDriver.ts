@@ -84,7 +84,6 @@ import { withInstanceIdentity } from "@t3tools/provider-core/server/instanceIden
 import { discoverAntigravitySkills, resolveAntigravityUserHome } from "./AntigravitySkills.ts";
 
 const DRIVER = ProviderDriverKind.make("antigravity");
-const ENABLE_ANTIGRAVITY_QUOTA_PROBE = Boolean(process.env.VITEST);
 const decodeSettings = Schema.decodeSync(AntigravitySettings);
 const isNodeRuntimeUnavailableError = Schema.is(NodeRuntimeUnavailableError);
 const isAcpRequestError = Schema.is(AcpErrors.AcpRequestError);
@@ -590,9 +589,8 @@ export const AntigravityDriver: ProviderDriver<
       environment: processEnvironment,
       stampIdentity: classifyModels,
       probe,
-      ...(ENABLE_ANTIGRAVITY_QUOTA_PROBE
-        ? { probeUsage: usage.probe, clearUsage: usage.clear }
-        : {}),
+      probeUsage: usage.probe,
+      clearUsage: usage.clear,
       auth: { type: auth.authMethod, label: antigravityAuthLabel(auth.authMethod) },
       ...(rememberedRuntimeModes ? { rememberedRuntimeModes } : {}),
       rememberRuntimeModes: (modes) =>
