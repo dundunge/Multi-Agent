@@ -696,15 +696,15 @@ describe("Antigravity subscription limits", () => {
       yield* TestClock.setTime(DateTime.toEpochMillis(DateTime.makeUnsafe("2026-10-09T12:00:00Z")));
       const keyringSecret = (expiry: string) =>
         JSON.stringify({ token: { access_token: "access-token", refresh_token: "r", expiry } });
-      // Google account instances keep their own sign-in; the shared entry belongs to another app.
+      // agy 1.5.14+ stores both consumer and enterprise sign-ins in the OS keyring when file storage is migrated.
       const personal = yield* fixture({
         missingToken: true,
+        userId: "google-user-personal",
         keyringSecret: keyringSecret("2026-10-09T14:00:00Z"),
       });
-      expect((yield* personal.probe).unavailable?.message).toBe(
-        "Sign in with Google to see Antigravity limits.",
-      );
-      expect(personal.requests).toEqual([]);
+      const personalLimits = yield* personal.probe;
+      expect(personalLimits.unavailable).toBeUndefined();
+      expect(personalLimits.windows).toHaveLength(4);
 
       const signedIn = yield* fixture({
         authMethod: "oauth-business",

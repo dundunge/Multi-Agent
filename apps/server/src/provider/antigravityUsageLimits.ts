@@ -1,3 +1,4 @@
+import * as NodeChildProcess from "node:child_process";
 import * as NodeModule from "node:module";
 
 import type { AntigravitySettings, ServerProviderUsageWindow } from "@t3tools/contracts";
@@ -227,10 +228,35 @@ export function readWindowsCliCredential(
   }
 }
 
+const readDarwinCliCredential = (): Promise<string | undefined> =>
+  new Promise((resolve, reject) => {
+    NodeChildProcess.execFile(
+      "/usr/bin/security",
+      ["find-generic-password", "-s", "gemini", "-a", "antigravity", "-w"],
+      { timeout: 5_000 },
+      (error, stdout) => {
+        if (!error) {
+          const trimmed = stdout.trim();
+          resolve(trimmed ? decodeGoKeyringSecret(new TextEncoder().encode(trimmed)) : undefined);
+          return;
+        }
+        const code = (error as NodeJS.ErrnoException & { code?: number | string }).code;
+        if (code === 44) {
+          resolve(undefined);
+          return;
+        }
+        reject(error);
+      },
+    );
+  });
+
 // Loaded lazily: a native binding that fails to load must not take the provider down.
 const readCliKeyringSecret = (platform: NodeJS.Platform, architecture: NodeJS.Architecture) =>
   Effect.tryPromise({
     try: async () => {
+      if (platform === "darwin") {
+        return await readDarwinCliCredential();
+      }
       const secret =
         platform === "win32"
           ? readWindowsCliCredential(architecture)
@@ -359,20 +385,35 @@ export const makeAntigravityUsageProbe = Effect.fn("makeAntigravityUsageProbe")(
     let projectId: string | undefined;
     if (!(yield* fs.exists(tokenPath))) {
       cached = undefined;
-      // Google account instances bypass the keyring, whose one entry every profile shares.
-      const stored = (yield* fs.exists(cliTokenPath))
+      // agy 1.5.14+ on macOS/Linux migrates antigravity-oauth-token into the OS keyring even for oauth-personal.
+      const fileStored = (yield* fs.exists(cliTokenPath))
         ? yield* fs.readFileString(cliTokenPath)
-        : input.authMethod === "oauth-business"
-          ? yield* readKeyringSecret
-          : undefined;
-      if (stored === undefined) {
-        return makeUnavailableUsageLimits({
-          checkedAt,
-          reason: "unsupported",
-          message: "Sign in with Google to see Antigravity limits.",
-        });
+        : undefined;
+      const fileCandidate = fileStored
+        ? yield* decodeCliToken(fileStored).pipe(Effect.option)
+        : Option.none();
+      const freshFileCandidate = Option.filter(
+        fileCandidate,
+        ({ token }) => Date.parse(token.expiry ?? "") > now + 60_000,
+      );
+      let decodedCli: typeof CliToken.Type;
+      if (Option.isSome(freshFileCandidate)) {
+        decodedCli = freshFileCandidate.value;
+      } else {
+        const keyringStored = yield* readKeyringSecret;
+        if (keyringStored !== undefined) {
+          decodedCli = yield* decodeCliToken(keyringStored);
+        } else if (Option.isSome(fileCandidate)) {
+          decodedCli = fileCandidate.value;
+        } else {
+          return makeUnavailableUsageLimits({
+            checkedAt,
+            reason: "unsupported",
+            message: "Sign in with Google to see Antigravity limits.",
+          });
+        }
       }
-      const { token } = yield* decodeCliToken(stored);
+      const { token } = decodedCli;
       if (!(Date.parse(token.expiry ?? "") > now + 60_000)) {
         return makeUnavailableUsageLimits({
           checkedAt,
