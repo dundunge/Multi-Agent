@@ -81,6 +81,8 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 const DEFAULT_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 // Without native resume, a released session comes back as a summary of the thread, so it stays longer.
 const NO_NATIVE_RESUME_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+// A user-driven thread pauses between turns; a cold restart there is the wait they notice.
+const ROOT_THREAD_IDLE_TIMEOUT_MS = 45 * 60 * 1000;
 const DEFAULT_MAX_IDLE_PIN_MS = 4 * 60 * 60 * 1000;
 const RELEASE_SCOPE_CLOSE_TIMEOUT_MS = 30 * 1000;
 /** Past adapters' own 10 s stop fallbacks, so they settle first when the provider answers at all. */
@@ -586,6 +588,28 @@ export const layerWithOptions = (
               ? DEFAULT_IDLE_TIMEOUT_MS
               : NO_NATIVE_RESUME_IDLE_TIMEOUT_MS),
         );
+      // Lineage never changes once a thread exists; unreadable threads are not cached.
+      const rootThreadById = new Map<ThreadId, boolean>();
+      const isRootThread = (threadId: ThreadId) => {
+        const cached = rootThreadById.get(threadId);
+        if (cached !== undefined) return Effect.succeed(cached);
+        return projectionStore.getThread(threadId).pipe(
+          Effect.map((thread) => thread.lineage.relationshipToParent !== "subagent"),
+          Effect.tap((root) => Effect.sync(() => rootThreadById.set(threadId, root))),
+          Effect.orElseSucceed(() => false),
+        );
+      };
+      const idleTimeoutForThreads = (
+        runtime: ProviderAdapter.ProviderAdapterV2SessionRuntime,
+        threadIds: Iterable<ThreadId>,
+      ) =>
+        options.idleTimeoutMs !== undefined
+          ? Effect.succeed(idleTimeoutFor(runtime))
+          : Effect.findFirst(threadIds, isRootThread).pipe(
+              Effect.map((root) =>
+                Option.isSome(root) ? ROOT_THREAD_IDLE_TIMEOUT_MS : idleTimeoutFor(runtime),
+              ),
+            );
       const maxIdlePinMs = Math.max(0, options.maxIdlePinMs ?? DEFAULT_MAX_IDLE_PIN_MS);
       interface PreparedMcpCredential {
         readonly mcpCredentialId: string | undefined;
@@ -1767,7 +1791,8 @@ export const layerWithOptions = (
 
         yield* cancelIdleFiber(entry.idleFiber);
         const generation = entry.idleGeneration + 1;
-        const idleFiber = yield* Effect.sleep(Duration.millis(idleTimeoutFor(entry.runtime))).pipe(
+        const idleTimeoutMs = yield* idleTimeoutForThreads(entry.runtime, entry.attachedThreadIds);
+        const idleFiber = yield* Effect.sleep(Duration.millis(idleTimeoutMs)).pipe(
           Effect.andThen(releaseIfStillIdle({ providerSessionId, generation })),
           Effect.forkIn(layerScope),
         );
@@ -2137,7 +2162,8 @@ export const layerWithOptions = (
           const pending = entry.idleThreadUnloads.get(providerThreadId);
           if (pending === undefined) return;
           const generation = pending.generation + 1;
-          const fiber = yield* Effect.sleep(Duration.millis(idleTimeoutFor(entry.runtime))).pipe(
+          const idleTimeoutMs = yield* idleTimeoutForThreads(entry.runtime, [pending.threadId]);
+          const fiber = yield* Effect.sleep(Duration.millis(idleTimeoutMs)).pipe(
             Effect.andThen(
               unloadIdleThread({
                 providerSessionId,

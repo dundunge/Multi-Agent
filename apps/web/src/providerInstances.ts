@@ -14,11 +14,12 @@ import {
 } from "@t3tools/contracts";
 import {
   normalizeProviderAccentColor,
+  providerInstanceShortSuffix,
   resolveProviderInstanceDisplayName,
   shouldShowInstanceBadge,
 } from "@t3tools/client-runtime/state/provider-instance-display";
 
-export { normalizeProviderAccentColor, shouldShowInstanceBadge };
+export { normalizeProviderAccentColor, providerInstanceShortSuffix, shouldShowInstanceBadge };
 
 /** Placeholder for untargetable drafts. Never persist or dispatch it; disable send until replaced. */
 export const NO_PROVIDER_MODEL_SELECTION: ModelSelection = {
@@ -165,18 +166,25 @@ function applyProviderInstanceBranding(
   const explicitInstance = Object.hasOwn(settings.providerInstances, entry.instanceId)
     ? settings.providerInstances[entry.instanceId]
     : undefined;
-  if (entry.driverKind !== "acpRegistry" || explicitInstance === undefined) return entry;
+  const configuredAccentColor = normalizeProviderAccentColor(explicitInstance?.accentColor);
+  const brandedEntry =
+    configuredAccentColor !== undefined && configuredAccentColor !== entry.accentColor
+      ? { ...entry, accentColor: configuredAccentColor }
+      : entry;
+  if (brandedEntry.driverKind !== "acpRegistry" || explicitInstance === undefined) {
+    return brandedEntry;
+  }
   const config =
     explicitInstance.config !== null && typeof explicitInstance.config === "object"
       ? (explicitInstance.config as Readonly<Record<string, unknown>>)
       : null;
   if (config?.source === "local") {
-    return { ...entry, acpRegistryAgentId: undefined, acpRegistryIconUrl: undefined };
+    return { ...brandedEntry, acpRegistryAgentId: undefined, acpRegistryIconUrl: undefined };
   }
   const agentId = config?.agentId;
   const iconUrl = config?.registryIconUrl;
   return {
-    ...entry,
+    ...brandedEntry,
     ...(typeof agentId === "string" && agentId.trim()
       ? { acpRegistryAgentId: agentId.trim() }
       : {}),
@@ -199,6 +207,14 @@ export function providerInstanceEntriesFor(
   );
 }
 
+function extractTrailingInstanceNumber(displayName: string): number | undefined {
+  const match = displayName
+    .trim()
+    .replace(/[)\]）】'’”"]+$/gu, "")
+    .match(/(?:账号|号|account|acc|#|-|\s)\s*(\d{1,3})$/iu);
+  return match?.[1] !== undefined ? Number.parseInt(match[1], 10) : undefined;
+}
+
 function sortProviderInstanceEntries(
   entries: ReadonlyArray<ProviderInstanceEntry>,
 ): ReadonlyArray<ProviderInstanceEntry> {
@@ -213,6 +229,24 @@ function sortProviderInstanceEntries(
   }
   const sorted: ProviderInstanceEntry[] = [];
   for (const bucket of byKind.values()) {
+    const numberedCount = bucket.filter(
+      (entry) => extractTrailingInstanceNumber(entry.displayName) !== undefined,
+    ).length;
+    if (numberedCount >= 2) {
+      const orderedBucket = [...bucket].toSorted((left, right) => {
+        const leftNum = extractTrailingInstanceNumber(left.displayName);
+        const rightNum = extractTrailingInstanceNumber(right.displayName);
+        if (leftNum !== undefined && rightNum !== undefined && leftNum !== rightNum) {
+          return leftNum - rightNum;
+        }
+        if (leftNum !== undefined && rightNum === undefined) return -1;
+        if (leftNum === undefined && rightNum !== undefined) return 1;
+        if (left.isDefault !== right.isDefault) return left.isDefault ? -1 : 1;
+        return 0;
+      });
+      sorted.push(...orderedBucket);
+      continue;
+    }
     const defaults = bucket.filter((entry) => entry.isDefault);
     const customs = bucket.filter((entry) => !entry.isDefault);
     sorted.push(...defaults, ...customs);

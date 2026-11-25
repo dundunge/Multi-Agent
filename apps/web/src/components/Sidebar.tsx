@@ -71,6 +71,8 @@ import {
 import {
   CheckIcon,
   ChevronDownIcon,
+  ChevronsDownUpIcon,
+  ChevronsUpDownIcon,
   FolderIcon,
   FolderPlusIcon,
   PlusIcon,
@@ -197,6 +199,7 @@ import {
   planSidebarThreadDrop,
   reduceSidebarProjectScopeMenuState,
   resolveAdjacentThreadId,
+  resolveSidebarRowStatus,
   resolveSidebarSweepKeys,
   resolveSidebarDropTarget,
   resolveSidebarDropVerb,
@@ -259,7 +262,7 @@ import {
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
-import { TooltipProvider } from "./ui/tooltip";
+import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import {
   composerDraftHasUserContent,
   DraftId,
@@ -541,16 +544,22 @@ function useSidebarThreads(input: {
   const visibleWorkingThreads = workingShelfExpanded
     ? workingThreads
     : routeThreadOnly(workingThreads, routeRowThreadKey);
+  const isFolderGroupExpanded = (group: SidebarProjectSnapshot, hasThreads: boolean): boolean => {
+    const keys = sidebarFolderExpansionKeys(group);
+    for (const key of keys) {
+      const explicit = projectExpandedById[key];
+      if (explicit !== undefined) return explicit;
+    }
+    return hasThreads ? resolveProjectExpanded(projectExpandedById, keys) : false;
+  };
   const projectFolders =
     folderGroups === null
       ? null
       : groupSidebarThreadsByProject(folderGroups, activeThreads, keepEmpty).map((folder) => {
-          const collapsed = !resolveProjectExpanded(
-            projectExpandedById,
-            sidebarFolderExpansionKeys(folder.group),
-          );
+          const collapsed = !isFolderGroupExpanded(folder.group, folder.threads.length > 0);
           return {
             group: folder.group,
+            totalThreadCount: folder.threads.length,
             collapsed,
             // A closed folder still shows the open thread, and hints at the rest.
             threads: collapsed
@@ -608,8 +617,15 @@ function useSidebarThreads(input: {
     toggleWorkingShelf: () => setWorkingShelfExpanded((value) => !value),
     projectFolders,
     toggleProjectFolder: (group: SidebarProjectSnapshot) => {
+      const folder = projectFolders?.find((entry) => entry.group.projectKey === group.projectKey);
+      const hasThreads = (folder?.totalThreadCount ?? 0) > 0;
       const keys = sidebarFolderExpansionKeys(group);
-      setProjectExpanded(keys, !resolveProjectExpanded(projectExpandedById, keys));
+      setProjectExpanded(keys, !isFolderGroupExpanded(group, hasThreads));
+    },
+    setAllProjectFoldersExpanded: (expanded: boolean) => {
+      if (!projectFolders) return;
+      const allKeys = projectFolders.flatMap((folder) => sidebarFolderExpansionKeys(folder.group));
+      if (allKeys.length > 0) setProjectExpanded(allKeys, expanded);
     },
     renderedSettledThreads,
     visibleSnoozedThreads,
@@ -1352,6 +1368,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     toggleWorkingShelf,
     projectFolders,
     toggleProjectFolder,
+    setAllProjectFoldersExpanded,
     renderedSettledThreads,
     visibleSnoozedThreads,
     visibleWorkingThreads,
@@ -1381,7 +1398,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         : scopedProjectGroups
       : null,
     keepEmptyFolders: (group) =>
-      scopedProjectGroups.length > 0 || (group.pinned && !group.archived),
+      scopedProjectGroups.length > 0 || (!group.archived && !group.isScratch),
   });
 
   // Ranked across environments as the palette ranks them, so one
@@ -3068,6 +3085,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       ? shortcutLabelForCommand(keybindings, "chat.newLocal")
       : undefined);
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
+  const attentionThreads = [...pinnedThreads, ...activeThreads, ...workingThreads].filter(
+    (thread) => {
+      if (threadShellKey(thread) === routeRowThreadKey) return false;
+      const status = resolveSidebarRowStatus(thread);
+      return status === "approval" || status === "input" || status === "request";
+    },
+  );
   return (
     <SidebarFolderDrop>
       <SidebarChromeHeader isElectron={isElectron} />
@@ -3077,6 +3101,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         fixedHeader={
           <SidebarGroup className="z-[1]">
             <SidebarThreadHeader
+              compactTreeMode={boringSidebarEnabled}
               hasProjects={projectGroups.length > 0}
               projectScope={
                 <Combobox
@@ -3323,6 +3348,30 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               activeSearchResultIndex={activeSearchResultIndex}
               onClearSearch={clearThreadSearch}
             />
+            {!isSearchingThreads && attentionThreads.length > 0 ? (
+              <button
+                type="button"
+                data-testid="sidebar-attention-banner"
+                onClick={() => {
+                  const next = attentionThreads[0];
+                  if (next) {
+                    void navigateToThread(scopeThreadRef(next.environmentId, next.id));
+                  }
+                }}
+                className="mt-1.5 flex h-7 w-full cursor-pointer items-center gap-2 rounded-md border border-warning/35 bg-warning/10 px-2 text-left text-xs font-medium text-warning-foreground transition-colors hover:bg-warning/15 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              >
+                <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-warning" />
+                <span className="shrink-0">
+                  {gt(
+                    "{count, plural, one {{count} thread needs you} other {{count} threads need you}}",
+                    { count: attentionThreads.length },
+                  )}
+                </span>
+                <span className="min-w-0 flex-1 truncate font-normal text-sidebar-muted-foreground">
+                  {attentionThreads[0]?.title}
+                </span>
+              </button>
+            ) : null}
           </SidebarGroup>
         }
       >
@@ -3619,6 +3668,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                       const items: ReactNode[] = [
                         <SidebarDraftBlock
                           key="draft-sessions"
+                          compact={boringSidebarEnabled}
                           draftIds={draftIds}
                           routeDraftComposer={routeDraftComposer}
                           terminalLabels={draftTerminalLabels}
@@ -3638,12 +3688,76 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           continue;
                         }
                         if (projectFolders !== null && item.marker === "active-placeholder") {
+                          if (projectFolders.length > 0) {
+                            const anyExpanded = projectFolders.some((folder) => !folder.collapsed);
+                            items.push(
+                              <li
+                                key="projects-tree-toolbar"
+                                data-thread-selection-safe
+                                className="mt-1 mb-0.5 flex h-6 list-none items-center justify-between px-2"
+                              >
+                                <span className="text-2xs font-medium tracking-wide text-sidebar-muted-foreground/80">
+                                  <T>Projects</T>
+                                </span>
+                                <span className="flex items-center gap-0.5">
+                                  <Tooltip>
+                                    <TooltipTrigger
+                                      render={
+                                        <Button
+                                          size="icon-micro"
+                                          variant="ghost-muted"
+                                          aria-label={
+                                            anyExpanded
+                                              ? gt("Collapse all projects")
+                                              : gt("Expand all projects")
+                                          }
+                                          onClick={() => setAllProjectFoldersExpanded(!anyExpanded)}
+                                        />
+                                      }
+                                    >
+                                      {anyExpanded ? (
+                                        <ChevronsDownUpIcon aria-hidden className="size-3.5" />
+                                      ) : (
+                                        <ChevronsUpDownIcon aria-hidden className="size-3.5" />
+                                      )}
+                                    </TooltipTrigger>
+                                    <TooltipPopup side="top">
+                                      {anyExpanded ? (
+                                        <T>Collapse all projects</T>
+                                      ) : (
+                                        <T>Expand all projects</T>
+                                      )}
+                                    </TooltipPopup>
+                                  </Tooltip>
+                                  <Tooltip>
+                                    <TooltipTrigger
+                                      render={
+                                        <Button
+                                          size="icon-micro"
+                                          variant="ghost-muted"
+                                          aria-label={gt("Add project")}
+                                          onClick={openAddProjectCommandPalette}
+                                        />
+                                      }
+                                    >
+                                      <FolderPlusIcon aria-hidden className="size-3.5" />
+                                    </TooltipTrigger>
+                                    <TooltipPopup side="top">
+                                      <T>Add project</T>
+                                    </TooltipPopup>
+                                  </Tooltip>
+                                </span>
+                              </li>,
+                            );
+                          }
                           for (const folder of projectFolders) {
+                            const folderRow = sidebarFolderRowId(folder.group.projectKey);
                             items.push(
                               <SidebarProjectFolderHeader
                                 key={`project-folder:${folder.group.projectKey}`}
                                 group={folder.group}
                                 collapsed={folder.collapsed}
+                                threadCount={folder.totalThreadCount}
                                 hiddenThreads={folder.hiddenThreads}
                                 onToggle={toggleProjectFolder}
                                 onNewThread={startThreadInProjectFolder}
@@ -3651,12 +3765,27 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               />,
                             );
                             for (const thread of folder.threads) {
+                              items.push(renderThreadRow(thread, "active", folderRow));
+                            }
+                            if (!folder.collapsed && folder.totalThreadCount === 0) {
                               items.push(
-                                renderThreadRow(
-                                  thread,
-                                  "active",
-                                  sidebarFolderRowId(folder.group.projectKey),
-                                ),
+                                <li
+                                  key={`project-folder-empty:${folder.group.projectKey}`}
+                                  className="relative list-none before:pointer-events-none before:absolute before:inset-y-0 before:left-3.5 before:w-px before:bg-sidebar-border/55"
+                                >
+                                  <button
+                                    type="button"
+                                    data-sidebar-row={`${folderRow}:new`}
+                                    data-sidebar-parent={folderRow}
+                                    onClick={() => startThreadInProjectFolder(folder.group)}
+                                    className="ml-5 flex h-7.5 w-[calc(100%-1.25rem)] cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-left text-xs text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                                  >
+                                    <PlusIcon aria-hidden className="size-3 shrink-0" />
+                                    <span className="truncate">
+                                      <T>New thread</T>
+                                    </span>
+                                  </button>
+                                </li>,
                               );
                             }
                           }

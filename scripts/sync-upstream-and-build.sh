@@ -54,8 +54,16 @@ if [ ! -d "$APP_BUNDLE" ]; then
   exit 1
 fi
 
-# Ad-hoc sign with consistent identifier so macOS TCC recognizes AICall
-codesign --force --deep --sign - --identifier "com.natie.aicall" "$APP_BUNDLE"
+# Sign with a persistent local certificate so macOS Keychain ACL stays valid across rebuilds
+chmod +x "$REPO_ROOT/scripts/ensure-local-signing-cert.sh"
+SIGN_KEYCHAIN="$("$REPO_ROOT/scripts/ensure-local-signing-cert.sh" 2>/dev/null || true)"
+if [ -n "$SIGN_KEYCHAIN" ] && [ -f "$SIGN_KEYCHAIN" ]; then
+  echo "    Signing with persistent identity 'AICall Local Signing' ($SIGN_KEYCHAIN)..."
+  codesign --force --deep --keychain "$SIGN_KEYCHAIN" --sign "AICall Local Signing" --identifier "com.natie.aicall" "$APP_BUNDLE"
+else
+  echo "    Falling back to ad-hoc codesign..."
+  codesign --force --deep --sign - --identifier "com.natie.aicall" "$APP_BUNDLE"
+fi
 
 echo "✓ Built successfully: $APP_BUNDLE"
 

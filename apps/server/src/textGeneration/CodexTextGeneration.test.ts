@@ -21,6 +21,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
+import { TestClock } from "effect/testing";
 import { createModelSelection } from "@t3tools/shared/model";
 import { expect } from "vite-plus/test";
 
@@ -92,6 +93,9 @@ function makeFakeCodexBinary(dir: string, input: FakeCodexInput) {
         `const check = ${check};`,
         "const args = process.argv.slice(2);",
         'const isMcpList = args.includes("mcp") && args.includes("list");',
+        "if (isMcpList && process.env.T3_FAKE_MCP_LIST_LOG) {",
+        '  NodeFS.appendFileSync(process.env.T3_FAKE_MCP_LIST_LOG, "listed\\n");',
+        "}",
         ...(input.lifecycle === undefined
           ? []
           : [
@@ -483,6 +487,42 @@ it.layer(layerCodexTextGenerationTest)("CodexTextGeneration", (it) => {
           expect(result.branch).toBe("remove-default-shapes");
         }),
     ),
+  );
+
+  it.effect.each([
+    { result: "a listed", mcpServers: [{ name: "docs", enabled: true }], listings: [1, 2] },
+    { result: "a failed", mcpServers: 2, listings: [2, 3] },
+  ] as const)("reuses $result MCP server list for five minutes", ({ mcpServers, listings }) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const log = path.join(yield* fs.makeTempDirectoryScoped(), "mcp-list.log");
+      const countListings = fs.readFileString(log).pipe(
+        Effect.map((text) => text.split("\n").filter(Boolean).length),
+        Effect.orElseSucceed(() => 0),
+      );
+      yield* withFakeCodexEnv(
+        {
+          output: JSON.stringify({ branch: "cache-mcp-list" }),
+          mcpServers,
+          environment: { T3_FAKE_MCP_LIST_LOG: log },
+        },
+        (textGeneration) =>
+          Effect.gen(function* () {
+            const generate = textGeneration.generateBranchName({
+              cwd: process.cwd(),
+              message: "Cache the MCP server list",
+              modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+            });
+            yield* generate;
+            yield* generate;
+            expect(yield* countListings).toBe(listings[0]);
+            yield* TestClock.adjust("5 minutes");
+            yield* generate;
+            expect(yield* countListings).toBe(listings[1]);
+          }),
+      );
+    }).pipe(Effect.scoped),
   );
 
   it.effect("keeps plugins and apps off over launch args that turn them on", () =>

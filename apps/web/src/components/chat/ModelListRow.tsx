@@ -9,6 +9,7 @@ import { Badge } from "../ui/badge";
 import { Kbd } from "../ui/kbd";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
+import { providerInstanceShortSuffix } from "../../providerInstances";
 import { modelPickerModelKey } from "./modelPickerKeys";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 
@@ -29,6 +30,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
   isSelected: boolean;
   /** Marks this instance apart from another of the same provider. */
   showInstanceBadge: boolean;
+  sessionUsedPercent?: number | undefined;
   showNewBadge?: boolean;
   unavailable?: boolean;
   jumpLabel?: string | null;
@@ -41,6 +43,9 @@ export const ModelListRow = memo(function ModelListRow(props: {
     name: props.name,
     subProvider: props.subProvider,
   };
+  const instanceSuffix = props.showInstanceBadge
+    ? providerInstanceShortSuffix(props.providerDisplayName, props.driverKind)
+    : null;
 
   const row = (
     <ComboboxItem
@@ -82,6 +87,11 @@ export const ModelListRow = memo(function ModelListRow(props: {
           <span className="sr-only">, {props.providerDisplayName}</span>
         </div>
         {props.isSelected ? <CheckIcon className="size-3.5 shrink-0" aria-hidden="true" /> : null}
+        {instanceSuffix ? (
+          <span className="shrink-0 truncate text-xs text-muted-foreground/75">
+            {instanceSuffix}
+          </span>
+        ) : null}
         {props.subProvider ? (
           <span className="min-w-0 shrink truncate text-xs text-muted-foreground/70">
             {props.subProvider}
@@ -103,6 +113,30 @@ export const ModelListRow = memo(function ModelListRow(props: {
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">
+        {props.sessionUsedPercent !== undefined ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span
+                  aria-label={gt("5-hour usage: {percent}%", { percent: props.sessionUsedPercent })}
+                  className={cn(
+                    "shrink-0 rounded px-1 py-px text-2xs tabular-nums",
+                    props.sessionUsedPercent >= 90
+                      ? "bg-destructive/15 font-medium text-destructive"
+                      : props.sessionUsedPercent >= 70
+                        ? "bg-warning/15 font-medium text-warning-foreground"
+                        : "text-muted-foreground/65",
+                  )}
+                >
+                  {`${props.sessionUsedPercent}%`}
+                </span>
+              }
+            />
+            <TooltipPopup side="top" align="center">
+              {gt("5-hour usage: {percent}%", { percent: props.sessionUsedPercent })}
+            </TooltipPopup>
+          </Tooltip>
+        ) : null}
         <Tooltip>
           <TooltipTrigger
             render={

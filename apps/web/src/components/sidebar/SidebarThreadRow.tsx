@@ -1083,7 +1083,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       ref={isRegeneratingTitle ? observeVisibleAnimation : undefined}
       className={cn(
         "min-w-0 flex-1 text-start text-sm transition-opacity motion-reduce:transition-none",
-        shouldRecede ? "font-normal" : "font-medium",
+        shouldRecede || (variant === "folder" && !props.isActive && !isUnread)
+          ? "font-normal"
+          : "font-medium",
         isRegeneratingTitle
           ? "relative truncate text-muted-foreground"
           : variant !== "slim"
@@ -1319,8 +1321,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         {...sortableRootProps}
         {...(fileDropHandlers ?? {})}
         className={cn(
-          "list-none [content-visibility:auto] [contain-intrinsic-size:auto_--spacing(9)]",
-          metaLine !== null && multiline && "[contain-intrinsic-size:auto_--spacing(13.5)]",
+          "list-none [content-visibility:auto]",
+          inFolder
+            ? "relative [contain-intrinsic-size:auto_--spacing(8)] before:pointer-events-none before:absolute before:inset-y-0 before:left-3.5 before:w-px before:bg-sidebar-border/55"
+            : "[contain-intrinsic-size:auto_--spacing(9)]",
+          metaLine !== null && multiline && "[contain-intrinsic-size:auto_--spacing(13)]",
           sortable?.isDragging && "relative z-20",
         )}
       >
@@ -1340,10 +1345,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 className={cn(
                   rowSurfaceClassName,
                   multiline
-                    ? "flex flex-col justify-center px-2.5 py-1.5"
-                    : "flex h-9 items-center gap-2.5 px-2.5",
-                  // Lines titles up with the folder name, past its chevron and icon.
-                  inFolder && "ps-9",
+                    ? "flex flex-col justify-center px-2.5 py-1"
+                    : inFolder
+                      ? "flex h-8 items-center gap-2 px-2.5"
+                      : "flex h-9 items-center gap-2.5 px-2.5",
+                  // Indents folder children past the tree rail while keeping a clean pill highlight.
+                  inFolder && "ml-5 w-[calc(100%-1.25rem)]",
                 )}
                 onClick={handleClick}
                 onDoubleClick={handleDoubleClick}

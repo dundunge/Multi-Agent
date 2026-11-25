@@ -3,6 +3,7 @@ import {
   EnvironmentId,
   ProviderDriverKind,
   ProviderInstanceId,
+  type ModelSelection,
   type ServerProvider,
   type UsageLimitSourceAccount,
   UsageLimitSourceId,
@@ -209,6 +210,115 @@ describe("new thread model fallback", () => {
       ).toEqual(usesFallback ? fallback : defaultSelection);
     },
   );
+});
+
+describe("new thread same-driver account relay", () => {
+  const claude = ProviderDriverKind.make("claudeAgent");
+  const model = "claude-opus-5-5";
+  const exhausted = {
+    checkedAt: "2026-09-03T11:00:00.000Z",
+    windows: [{ ...window, usedPercent: 100 }],
+  };
+  const account = (
+    instanceId: string,
+    displayName: string,
+    overrides: Partial<ServerProvider> = {},
+  ) =>
+    provider({
+      instanceId: ProviderInstanceId.make(instanceId),
+      driver: claude,
+      displayName,
+      models: [{ slug: model, name: "Opus 5.5", isCustom: false, capabilities: null }],
+      ...overrides,
+    });
+  const selection = {
+    instanceId: ProviderInstanceId.make("claudeAgent_acc1"),
+    model,
+    options: [{ id: "effort", value: "high" }],
+  };
+  const resolve = (providers: ServerProvider[], fallbackSelection: ModelSelection | null = null) =>
+    resolveNewThreadModelSelection({
+      defaultSelection: selection,
+      fallbackSelection,
+      providers,
+      now,
+    });
+
+  it("hands an exhausted account's model to the next account in numeric order", () => {
+    const result = resolve([
+      account("claudeAgent_acc1", "Claude 账号1", { usageLimits: exhausted }),
+      account("claudeAgent_acc10", "Claude 账号10"),
+      account("claudeAgent_acc3", "Claude 账号3"),
+      account("claudeAgent", "Claude 账号2"),
+    ]);
+    expect(result.selection).toEqual({ ...selection, instanceId: "claudeAgent" });
+    expect(result.fallback?.provider.instanceId).toBe("claudeAgent_acc1");
+    expect(result.fallback?.resetsAt).toBe(window.resetsAt);
+  });
+
+  it("prefers a usable explicit fallback over a sibling account", () => {
+    const codex = provider({ instanceId: ProviderInstanceId.make("codex") });
+    const fallback = { instanceId: codex.instanceId, model: "gpt-6.2-sol" };
+    expect(
+      resolve(
+        [
+          account("claudeAgent_acc1", "Claude 账号1", { usageLimits: exhausted }),
+          account("claudeAgent", "Claude 账号2"),
+          codex,
+        ],
+        fallback,
+      ).selection,
+    ).toEqual(fallback);
+  });
+
+  it("relays to a sibling when the explicit fallback is exhausted too", () => {
+    const codex = provider({
+      instanceId: ProviderInstanceId.make("codex"),
+      usageLimits: exhausted,
+    });
+    expect(
+      resolve(
+        [
+          account("claudeAgent_acc1", "Claude 账号1", { usageLimits: exhausted }),
+          account("claudeAgent", "Claude 账号2"),
+          codex,
+        ],
+        { instanceId: codex.instanceId, model: "gpt-6.2-sol" },
+      ).selection?.instanceId,
+    ).toBe("claudeAgent");
+  });
+
+  it.each([
+    ["exhausted", { usageLimits: exhausted }],
+    ["disabled", { enabled: false }],
+    ["unauthenticated", { auth: { status: "unauthenticated" as const } }],
+    ["missing the model", { models: [] }],
+    ["another driver", { driver: ProviderDriverKind.make("codex") }],
+  ] as const)("skips a sibling that is %s", (_name, overrides) => {
+    expect(
+      resolve([
+        account("claudeAgent_acc1", "Claude 账号1", { usageLimits: exhausted }),
+        account("claudeAgent", "Claude 账号2", overrides),
+        account("claudeAgent_acc3", "Claude 账号3"),
+      ]).selection?.instanceId,
+    ).toBe("claudeAgent_acc3");
+  });
+
+  it("keeps the selection when no sibling can take over", () => {
+    expect(
+      resolve([
+        account("claudeAgent_acc1", "Claude 账号1", { usageLimits: exhausted }),
+        account("claudeAgent", "Claude 账号2", { usageLimits: exhausted }),
+      ]),
+    ).toEqual({ selection, fallback: null });
+  });
+
+  it("keeps a healthy selection on its own account", () => {
+    expect(
+      resolve([account("claudeAgent_acc1", "Claude 账号1"), account("claudeAgent", "Claude 账号2")])
+        .selection,
+    ).toEqual(selection);
+  });
 });
 
 describe("pace", () => {

@@ -1,3 +1,4 @@
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -39,6 +40,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 
 const CODEX_TIMEOUT_MS = 180_000;
 const CODEX_MCP_LIST_TIMEOUT_MS = 10_000;
+const CODEX_MCP_LIST_CACHE_TTL_MS = 5 * 60_000;
 // Plugins/apps add MCP servers; use trailing config overrides because --disable loses to user -c flags.
 // Codex also reads the legacy connectors key for apps.
 const CODEX_NO_PLUGIN_ARGS = [
@@ -169,7 +171,8 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     return imagePaths;
   });
 
-  const listEnabledMcpServers = Effect.fn("listEnabledMcpServers")(
+  /** undefined when the list could not be read, so callers never cache a failure. */
+  const readEnabledMcpServers = Effect.fn("readEnabledMcpServers")(
     function* (input: {
       readonly binary: string;
       readonly cwd: string;
@@ -202,7 +205,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
           reason: "exit",
           exitCode,
         });
-        return [];
+        return undefined;
       }
       const servers = yield* decodeCodexMcpServers(stdout).pipe(
         Effect.tapError(() =>
@@ -211,7 +214,10 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
           }),
         ),
       );
-      return servers.filter((server) => server.enabled).map((server) => server.name);
+      const names: ReadonlyArray<string> = servers
+        .filter((server) => server.enabled)
+        .map((server) => server.name);
+      return names;
     },
     Effect.scoped,
     Effect.timeoutOption(CODEX_MCP_LIST_TIMEOUT_MS),
@@ -220,12 +226,51 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         onNone: () =>
           Effect.logWarning("codex mcp list failed; text generation keeps its MCP servers", {
             reason: "timeout",
-          }).pipe(Effect.as<ReadonlyArray<string>>([])),
+          }).pipe(Effect.as(undefined)),
         onSome: (names) => Effect.succeed(names),
       }),
     ),
-    Effect.orElseSucceed((): ReadonlyArray<string> => []),
+    Effect.orElseSucceed(() => undefined),
   );
+
+  // Each title or branch name would otherwise spawn `codex mcp list` before `codex exec`.
+  // Config mtimes are in the key so a newly added server is still turned off.
+  const mcpServersCache = new Map<
+    string,
+    { readonly names: ReadonlyArray<string>; readonly expiresAt: number }
+  >();
+  const configStamp = (filePath: string) =>
+    fileSystem.stat(filePath).pipe(
+      Effect.map((info) => Option.getOrNull(info.mtime)?.getTime() ?? null),
+      Effect.orElseSucceed(() => null),
+    );
+  const listEnabledMcpServers = Effect.fn("listEnabledMcpServers")(function* (input: {
+    readonly binary: string;
+    readonly cwd: string;
+    readonly env: NodeJS.ProcessEnv;
+    readonly launchArgs: ReadonlyArray<string>;
+  }) {
+    const codexHome = input.env.CODEX_HOME ?? path.join(yield* HostProcess.HomeDirectory, ".codex");
+    // Fixed fields first, so the variable-length launch args cannot shift into them.
+    const key = [
+      input.binary,
+      input.cwd,
+      codexHome,
+      yield* configStamp(path.join(codexHome, "config.toml")),
+      yield* configStamp(path.join(input.cwd, ".codex", "config.toml")),
+      ...input.launchArgs,
+    ].join("\0");
+    const now = yield* Clock.currentTimeMillis;
+    const cached = mcpServersCache.get(key);
+    if (cached !== undefined && cached.expiresAt > now) return cached.names;
+    const names = yield* readEnabledMcpServers(input);
+    if (names === undefined) return [];
+    for (const [staleKey, entry] of mcpServersCache) {
+      if (entry.expiresAt <= now) mcpServersCache.delete(staleKey);
+    }
+    mcpServersCache.set(key, { names, expiresAt: now + CODEX_MCP_LIST_CACHE_TTL_MS });
+    return names;
+  });
 
   const runCodexJson = Effect.fn("runCodexJson")(function* <S extends Schema.Top>({
     operation,

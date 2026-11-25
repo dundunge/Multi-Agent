@@ -30,6 +30,7 @@ import {
 import { ChevronRightIcon } from "lucide-react";
 import { ModelListRow } from "./ModelListRow";
 import { ModelPickerSidebar } from "./ModelPickerSidebar";
+import { useNowMinute } from "../../hooks/useNowMinute";
 import { useProviderWorkspaceSnapshotRefresh } from "./useProviderWorkspaceSnapshotRefresh";
 import { getProviderStatusMessage, hasProviderSetup } from "./ProviderStatusBanner";
 import {
@@ -89,9 +90,30 @@ type ModelPickerItem = {
   acpRegistryAgentId?: string | undefined;
   acpRegistryIconUrl?: string | undefined;
   continuationGroupKey?: string | undefined;
+  sessionUsedPercent?: number | undefined;
   isLegacy?: boolean | undefined;
   isUnavailable?: boolean | undefined;
 };
+
+function resolveSessionUsagePercent(
+  entry: ProviderInstanceEntry,
+  modelSlug: string,
+  nowMs: number,
+): number | undefined {
+  const windows = entry.snapshot.usageLimits?.windows;
+  if (!windows || windows.length === 0) return undefined;
+  const sessionWindow = windows.find(
+    (window) =>
+      window.kind === "session" &&
+      (window.modelIds === undefined || window.modelIds.includes(modelSlug)),
+  );
+  if (!sessionWindow) return undefined;
+  if (sessionWindow.resetsAt) {
+    const resetsMs = Date.parse(sessionWindow.resetsAt);
+    if (Number.isFinite(resetsMs) && resetsMs <= nowMs) return 0;
+  }
+  return Math.round(sessionWindow.usedPercent);
+}
 
 export function resolveModelPickerSelectedModel(input: {
   driverKind: ProviderDriverKind | undefined;
@@ -374,6 +396,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const gt = useGT();
   const messages = useMessages();
   const locale = useLocale();
+  const nowMinute = useNowMinute();
+  const nowMinuteMs = Date.parse(`${nowMinute}:00.000Z`);
   const {
     searchInputRef,
     keybindings: providedKeybindings,
@@ -609,6 +633,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           continue;
         }
         seenKeys.add(key);
+        const sessionUsedPercent = resolveSessionUsagePercent(entry, model.slug, nowMinuteMs);
         out.push({
           slug: model.slug,
           name: model.name,
@@ -617,6 +642,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           ...(model.badge ? { badge: model.badge } : {}),
           ...(model.isLegacy ? { isLegacy: true } : {}),
           ...(model.isUnavailable ? { isUnavailable: true } : {}),
+          ...(sessionUsedPercent !== undefined ? { sessionUsedPercent } : {}),
           instanceId,
           driverKind: entry.driverKind,
           instanceDisplayName: entry.displayName,
@@ -731,6 +757,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
 
     return sortProviderModelItems(result, {
       favoriteModelKeys: favoritesSet,
+      favoriteOrderKeys:
+        selectedInstanceId === "favorites"
+          ? favorites.map((fav) => providerModelKey(fav.provider, fav.model))
+          : undefined,
       groupFavorites: selectedInstanceId !== "favorites",
       instanceOrder: selectedInstanceId === "favorites" ? instanceOrder : [],
     });
@@ -1231,6 +1261,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     }
                     favoriteStarOnHover={selectedInstanceId === "favorites" && !isSearching}
                     showInstanceBadge={badgedInstanceIds.has(model.instanceId)}
+                    sessionUsedPercent={model.sessionUsedPercent}
                     showNewBadge={model.badge === "new"}
                     unavailable={model.isUnavailable === true}
                     jumpLabel={modelJumpLabelByKey.get(modelKey) ?? null}

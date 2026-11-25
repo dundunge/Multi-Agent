@@ -87,32 +87,49 @@ export function resolveNewThreadModelSelection(input: {
 }) {
   const selection = input.explicitSelection ?? input.defaultSelection;
   const unchanged = { selection, fallback: null };
-  if (input.explicitSelection || !selection || !input.fallbackSelection) return unchanged;
+  if (input.explicitSelection || !selection) return unchanged;
   const provider = input.providers.find((entry) => entry.instanceId === selection.instanceId);
   const window = exhaustedUsageWindow(provider, input.now, selection.model);
-  const fallback = input.providers.find(
-    (entry) => entry.instanceId === input.fallbackSelection?.instanceId,
-  );
-  if (
-    !provider ||
-    !window ||
-    !fallback?.enabled ||
-    !fallback.installed ||
-    fallback.auth.status === "unauthenticated" ||
-    !isProviderAvailable(fallback) ||
-    exhaustedUsageWindow(fallback, input.now, input.fallbackSelection.model) ||
-    (input.settings &&
-      !resolveProjectProviderInstanceEnabled(
+  if (!provider || !window) return unchanged;
+  const usable = (candidate: ServerProvider | undefined, model: string) =>
+    candidate !== undefined &&
+    candidate.enabled &&
+    candidate.installed &&
+    candidate.auth.status !== "unauthenticated" &&
+    isProviderAvailable(candidate) &&
+    !exhaustedUsageWindow(candidate, input.now, model) &&
+    (!input.settings ||
+      resolveProjectProviderInstanceEnabled(
         input.settings,
         input.projectId ?? null,
-        fallback.instanceId,
-      ))
-  )
-    return unchanged;
-  return {
-    selection: input.fallbackSelection,
-    fallback: { provider, resetsAt: window.resetsAt ?? null },
-  };
+        candidate.instanceId,
+      ));
+  const fallback = { provider, resetsAt: window.resetsAt ?? null };
+  const fallbackSelection = input.fallbackSelection;
+  if (
+    fallbackSelection &&
+    usable(
+      input.providers.find((entry) => entry.instanceId === fallbackSelection.instanceId),
+      fallbackSelection.model,
+    )
+  ) {
+    return { selection: fallbackSelection, fallback };
+  }
+  // Another account of the same driver serving the same model takes over, in account order.
+  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+  const sibling = input.providers
+    .filter(
+      (candidate) =>
+        candidate.driver === provider.driver &&
+        candidate.instanceId !== provider.instanceId &&
+        candidate.models.some((model) => model.slug === selection.model) &&
+        usable(candidate, selection.model),
+    )
+    .sort((left, right) =>
+      collator.compare(left.displayName ?? left.instanceId, right.displayName ?? right.instanceId),
+    )[0];
+  if (!sibling) return unchanged;
+  return { selection: { ...selection, instanceId: sibling.instanceId }, fallback };
 }
 
 export const CHATGPT_USAGE_URL = "https://chatgpt.com/#settings/Usage";

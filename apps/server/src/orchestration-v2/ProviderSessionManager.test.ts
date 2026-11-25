@@ -2105,11 +2105,13 @@ it.effect(
 );
 
 it.effect.each([
-  { resume: "native resume", supportsNativeResume: true, minutes: 2 },
-  { resume: "no native resume", supportsNativeResume: false, minutes: 30 },
-])(
-  "ProviderSessionManagerV2 releases an idle session with $resume after $minutes minutes",
-  ({ supportsNativeResume, minutes }) =>
+  { kind: "root", resume: "native resume", supportsNativeResume: true, minutes: 45 },
+  { kind: "root", resume: "no native resume", supportsNativeResume: false, minutes: 45 },
+  { kind: "subagent", resume: "native resume", supportsNativeResume: true, minutes: 2 },
+  { kind: "subagent", resume: "no native resume", supportsNativeResume: false, minutes: 30 },
+] as const)(
+  "ProviderSessionManagerV2 releases an idle $kind session with $resume after $minutes minutes",
+  ({ kind, supportsNativeResume, minutes }) =>
     Effect.gen(function* () {
       const state = yield* Ref.make(emptyState);
       const capabilities = {
@@ -2127,7 +2129,14 @@ it.effect.each([
         });
         yield* eventSink.write({
           events: [
-            yield* makeThreadCreatedEvent({ idAllocator, threadId, now: yield* DateTime.now }),
+            yield* makeThreadCreatedEvent({
+              idAllocator,
+              threadId,
+              now: yield* DateTime.now,
+              ...(kind === "subagent"
+                ? { delegatedBy: ThreadId.make("thread-default-idle-timeout-parent") }
+                : {}),
+            }),
           ],
         });
         yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });

@@ -5,10 +5,12 @@ import {
   normalizeProviderAccentColor,
   providerAccentForegroundColor,
   providerInstanceInitials,
+  providerInstanceShortSuffix,
   shouldShowInstanceBadge,
 } from "./providerInstanceDisplay.ts";
 
 const codex = ProviderDriverKind.make("codex");
+const claudeAgent = ProviderDriverKind.make("claudeAgent");
 const acpRegistry = ProviderDriverKind.make("acpRegistry");
 
 describe("providerInstanceInitials", () => {
@@ -29,6 +31,23 @@ describe("providerInstanceInitials", () => {
   it("keeps an emoji whole instead of splitting its surrogate pair", () => {
     expect(providerInstanceInitials("😀 Work")).toBe("😀W");
     expect(providerInstanceInitials("😀")).toBe("😀");
+  });
+
+  it("uses the trailing account number for numbered multi-account labels instead of colliding on C账", () => {
+    expect(providerInstanceInitials("Claude 账号1")).toBe("1");
+    expect(providerInstanceInitials("Claude 账号2")).toBe("2");
+    expect(providerInstanceInitials("Codex 账号1")).toBe("1");
+    expect(providerInstanceInitials("Codex-2")).toBe("2");
+    expect(providerInstanceInitials("Claude (账号3)")).toBe("3");
+  });
+});
+
+describe("providerInstanceShortSuffix", () => {
+  it("strips the redundant provider brand prefix from multi-account labels", () => {
+    expect(providerInstanceShortSuffix("Claude 账号1", claudeAgent)).toBe("账号1");
+    expect(providerInstanceShortSuffix("Codex 账号2", codex)).toBe("账号2");
+    expect(providerInstanceShortSuffix("Claude (Pro-A)", claudeAgent)).toBe("Pro-A");
+    expect(providerInstanceShortSuffix("Claude", claudeAgent)).toBeNull();
   });
 });
 

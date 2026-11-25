@@ -27,6 +27,13 @@ export function resolveProviderInstanceDisplayName(
 }
 
 export function providerInstanceInitials(label: string): string {
+  const numberedAccountMatch = label
+    .trim()
+    .replace(/[)\]）】'’”"]+$/gu, "")
+    .match(/^(?:.+?)(?:账号|号|account|acc|#|-|\s)\s*(\d{1,2})$/iu);
+  if (numberedAccountMatch?.[1]) {
+    return numberedAccountMatch[1];
+  }
   // Punctuation separates words so "Codex (hub)" reads CH, not C(. An apostrophe
   // inside a word stays ("Theo's Codex" is TC); a quoting one does not
   // ("Codex 'hub'" is CH). A single camel-case word splits at its humps, so
@@ -44,6 +51,25 @@ export function providerInstanceInitials(label: string): string {
     .slice(0, 2)
     .map((word) => Array.from(word)[0]?.toUpperCase() ?? "")
     .join("");
+}
+
+export function providerInstanceShortSuffix(
+  displayName: string,
+  driverKind: ProviderDriverKind,
+): string | null {
+  const trimmed = displayName.trim();
+  if (!trimmed) return null;
+  const kindLabel = PROVIDER_DISPLAY_NAMES[driverKind] ?? humanizeSlug(driverKind);
+  if (trimmed.toLowerCase() === kindLabel.toLowerCase()) return null;
+  const escapedKind = kindLabel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const stripped = trimmed
+    .replace(
+      new RegExp(`^(?:${escapedKind}|claude|codex|openai|gemini|antigravity)[\\s:：·\\-_]*`, "iu"),
+      "",
+    )
+    .replace(/^[([（【]+|[)\]）】]+$/gu, "")
+    .trim();
+  return stripped.length > 0 ? stripped : trimmed;
 }
 
 export function normalizeProviderAccentColor(value: string | undefined): string | undefined {

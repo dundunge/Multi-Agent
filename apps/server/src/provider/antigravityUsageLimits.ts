@@ -1,3 +1,4 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- macOS security CLI lookup runs once on demand
 import * as NodeChildProcess from "node:child_process";
 import * as NodeModule from "node:module";
 
@@ -240,8 +241,8 @@ const readDarwinCliCredential = (): Promise<string | undefined> =>
           resolve(trimmed ? decodeGoKeyringSecret(new TextEncoder().encode(trimmed)) : undefined);
           return;
         }
-        const code = (error as NodeJS.ErrnoException & { code?: number | string }).code;
-        if (code === 44) {
+        const code = (error as { code?: unknown }).code;
+        if (code === 44 || code === "44") {
           resolve(undefined);
           return;
         }

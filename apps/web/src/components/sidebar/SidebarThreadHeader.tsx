@@ -1,5 +1,5 @@
-import { useGT } from "gt-react";
-import { SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
+import { T, useGT } from "gt-react";
+import { PlusIcon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
 import {
   type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -14,6 +14,7 @@ import { SidebarInput, SidebarMenuButton } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export interface SidebarThreadHeaderProps {
+  compactTreeMode?: boolean | undefined;
   hasProjects: boolean;
   projectScope: ReactNode;
   onNewThread: (event: ReactMouseEvent) => void;
@@ -32,6 +33,7 @@ export interface SidebarThreadHeaderProps {
 }
 
 export function SidebarThreadHeader({
+  compactTreeMode = false,
   hasProjects,
   projectScope,
   onNewThread,
@@ -55,6 +57,95 @@ export function SidebarThreadHeader({
   const newThreadLabel = newThreadShortcutLabel
     ? gt("New thread ({shortcut})", { shortcut: newThreadShortcutLabel })
     : gt("New thread");
+  const newThreadTooltip = showNewThreadInProjectHint ? (
+    <span className="flex flex-col gap-0.5">
+      <span>{newThreadLabel}</span>
+      <span className="text-muted-foreground">
+        {newThreadInProjectShortcutLabel
+          ? gt("New thread in current project: Shift+click ({shortcut})", {
+              shortcut: newThreadInProjectShortcutLabel,
+            })
+          : gt("New thread in current project: Shift+click")}
+      </span>
+    </span>
+  ) : (
+    newThreadLabel
+  );
+
+  if (compactTreeMode) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                aria-label={gt("New thread")}
+                disabled={newThreadDisabled}
+                onClick={onNewThread}
+                className="flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg border border-sidebar-border/80 bg-sidebar-row-hover/35 px-2.5 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+              />
+            }
+          >
+            <PlusIcon aria-hidden className="size-3.5 shrink-0 text-sidebar-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate text-left">
+              <T>New thread</T>
+            </span>
+            {newThreadShortcutLabel ? (
+              <span
+                aria-hidden
+                className="shrink-0 text-2xs font-normal text-sidebar-muted-foreground/75"
+              >
+                {newThreadShortcutLabel}
+              </span>
+            ) : null}
+          </TooltipTrigger>
+          <TooltipPopup side="bottom">{newThreadTooltip}</TooltipPopup>
+        </Tooltip>
+        <div className="flex items-center gap-1">
+          <div className="flex h-7.5 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-within:bg-sidebar-row-hover focus-within:text-sidebar-foreground focus-within:ring-1 focus-within:ring-inset focus-within:ring-ring/70">
+            <SearchIcon className="size-3.5 shrink-0 text-(--sidebar-icon-color)" />
+            <SidebarInput
+              ref={searchInputRef}
+              nativeInput
+              type="search"
+              value={searchQuery}
+              onChange={(event) => onSearchQueryChange(event.currentTarget.value)}
+              onKeyDown={onSearchKeyDown}
+              placeholder={gt("Search", { $context: "search field placeholder" })}
+              aria-label={gt("Search threads")}
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={resultsVisible}
+              aria-controls={resultsVisible ? "sidebar-thread-search-results" : undefined}
+              aria-activedescendant={
+                activeResultExists
+                  ? `sidebar-thread-search-result-${activeSearchResultIndex}`
+                  : undefined
+              }
+              className="min-w-0 flex-1"
+            />
+            {isSearching ? (
+              <Button
+                type="button"
+                size="icon-micro"
+                variant="ghost-muted"
+                className="shrink-0"
+                aria-label={gt("Clear thread search")}
+                onClick={() => {
+                  onClearSearch();
+                  searchInputRef.current?.focus();
+                }}
+              >
+                <XIcon className="size-3" />
+              </Button>
+            ) : null}
+          </div>
+          {hasProjects ? <div className="flex shrink-0 items-center">{projectScope}</div> : null}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center gap-1">
@@ -100,22 +191,7 @@ export function SidebarThreadHeader({
         {hasProjects ? projectScope : null}
         <SidebarHeaderIconButton
           label={gt("New thread")}
-          tooltip={
-            showNewThreadInProjectHint ? (
-              <span className="flex flex-col gap-0.5">
-                <span>{newThreadLabel}</span>
-                <span className="text-muted-foreground">
-                  {newThreadInProjectShortcutLabel
-                    ? gt("New thread in current project: Shift+click ({shortcut})", {
-                        shortcut: newThreadInProjectShortcutLabel,
-                      })
-                    : gt("New thread in current project: Shift+click")}
-                </span>
-              </span>
-            ) : (
-              newThreadLabel
-            )
-          }
+          tooltip={newThreadTooltip}
           disabled={newThreadDisabled}
           onClick={onNewThread}
         >
